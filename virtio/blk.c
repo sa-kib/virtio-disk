@@ -330,7 +330,7 @@ static int virtio_blk__init_one(struct kvm *kvm, struct disk_image *disk)
 	list_add_tail(&bdev->list, &bdevs);
 
 	r = virtio_init(kvm, bdev, &bdev->vdev, &blk_dev_virtio_ops,
-			virtio_legacy ? VIRTIO_MMIO_LEGACY : VIRTIO_MMIO,
+			virtio_legacy ? VIRTIO_PCI_LEGACY : VIRTIO_PCI,
 			PCI_DEVICE_ID_VIRTIO_BLK, VIRTIO_ID_BLOCK, PCI_CLASS_BLK,
 			disk->addr, disk->irq);
 	if (r < 0)

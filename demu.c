@@ -67,6 +67,7 @@
 #include "device.h"
 #include "demu.h"
 #include "xs_dev.h"
+#include "pci.h"
 
 #include "kvm/kvm.h"
 
@@ -853,6 +854,15 @@ demu_sigterm(int num)
     exit(0);
 }
 
+static struct sigaction sigusr1_handler;
+
+static void
+demu_sigusr1(int num)
+{
+    DBG("%s\n", strsignal(num));
+    pci_config_dump();
+}
+
 static int demu_read_xenstore_config(void *unused)
 {
     char *str;
@@ -893,12 +903,18 @@ demu_initialize(void)
     void            *addr;
     evtchn_port_t   port;
     int             i;
-
+#if 0
     rc = xenstore_connect_dom(demu_state.xs_dev, demu_state.be_domid,
             demu_state.domid, demu_read_xenstore_config, NULL);
     if (rc < 0)
         goto fail0;
-
+#else
+    disk_image[0].readonly = false;
+    disk_image[0].addr = (u32)0x330f8000; 
+    disk_image[0].irq = (u32)(47);
+    disk_image[0].filename = "/dev/mmcblk0p4";
+    image_count = 1;
+#endif
     demu_seq_next();
 
     demu_state.xeh = xenevtchn_open(NULL, 0);
@@ -1047,10 +1063,10 @@ fail2:
 
 fail1:
     DBG("fail1\n");
-
+#if 0
 fail0:
     DBG("fail0\n");
-
+#endif
     warn("fail");
     return -1;
 }
@@ -1110,17 +1126,29 @@ main(int argc, char **argv, char **envp)
     int             rc;
     int             efd, xfd;
     char            *devid_str = NULL;
-    int             opt;
+    int             opt, optind;
+    domid_t	    domid = DOMID_INVALID;
     const struct option lopts[] =
     {
         {"help", no_argument, NULL, 'h'},
         {"devid", optional_argument, NULL, 'd'},
         {"legacy", no_argument, NULL, 'l'},
+        {"domain", required_argument, NULL, 0},
         {NULL, 0, NULL, 0},
     };
 
-    while ((opt = getopt_long(argc, argv, "hd:l", lopts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hd:l", lopts, &optind)) != -1) {
         switch (opt) {
+            case 0:
+                switch (optind) {
+                case 3:
+	  	    domid = strtol(optarg, NULL, 0);
+		    break;
+                default:
+                /* Fallthough */
+                }
+                break;
+
             case 'd':
                 devid_str = optarg;
                 break;
@@ -1154,6 +1182,11 @@ main(int argc, char **argv, char **envp)
     sigaction(SIGABRT, &sigterm_handler, NULL);
     sigdelset(&block, SIGABRT);
 
+    memset(&sigusr1_handler, 0, sizeof (struct sigaction));
+    sigusr1_handler.sa_handler = demu_sigusr1;
+    sigaction(SIGUSR1, &sigusr1_handler, NULL);
+    sigdelset(&block, SIGUSR1);
+
     sigprocmask(SIG_BLOCK, &block, NULL);
 
     demu_state.xs_dev = xenstore_create(XS_DISK_TYPE, devid_str);
@@ -1172,15 +1205,19 @@ main(int argc, char **argv, char **envp)
     DBG("read backend domid %u\n", demu_state.be_domid);
 
     while (1) {
-        rc = xenstore_wait_fe_domid(demu_state.xs_dev);
-        if (rc < 0) {
-            /*fprintf(stderr, "failed to read frontend domid\n");*/
-            msleep(100);
-            continue;
-        }
-        demu_state.domid = rc;
-        DBG("read frontend domid %u\n", demu_state.domid);
-
+	if (domid == DOMID_INVALID) {
+		rc = xenstore_wait_fe_domid(demu_state.xs_dev);
+		if (rc < 0) {
+		    /*fprintf(stderr, "failed to read frontend domid\n");*/
+		    msleep(100);
+		    continue;
+		}
+		demu_state.domid = rc;
+		DBG("read frontend domid %u\n", demu_state.domid);
+	} else {
+		demu_state.domid = domid;
+		DBG("provided frontend domid %u\n", demu_state.domid);
+	}
         rc = demu_initialize();
         if (rc < 0) {
             demu_teardown();

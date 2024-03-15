@@ -35,7 +35,7 @@ CFLAGS  = -I. -I$(shell pwd)/include
 # _GNU_SOURCE for asprintf.
 CFLAGS += -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_GNU_SOURCE #-DMAP_IN_ADVANCE -DCONFIG_HAS_AIO
 
-CFLAGS += -Wall -Werror -g -O1
+CFLAGS += -Wall -Werror -g -O1 -Wno-unused-variable -Wno-unused-function
 
 ifeq ($(shell uname),Linux)
 LDLIBS := -lutil -lrt
